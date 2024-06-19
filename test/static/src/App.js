@@ -58,13 +58,13 @@ function App() {
                 <Col>
                   <InputGroup>
                     <InputGroup.Text>Set File Path: </InputGroup.Text>
-                    <EndPointInput endpoint={munirEndpoint} event_type="change" fullpath="args/file_path"/>
+                    <EndPointInput endpoint={munirEndpoint} event_type="change" fullpath="args/file_path" delay={3000}/>
                   </InputGroup>
                 </Col>
                 <Col>
                   <InputGroup>
                     <InputGroup.Text>Set File Name: </InputGroup.Text>
-                    <EndPointInput endpoint={munirEndpoint} event_type="change" fullpath="args/file_name"/>
+                    <EndPointInput endpoint={munirEndpoint} event_type="change" fullpath="args/file_name" delay={3000}/>
                   </InputGroup>
                 </Col>
               </Row>
@@ -72,13 +72,13 @@ function App() {
                 <Col>
                   <InputGroup>
                     <InputGroup.Text>Set # Frames: </InputGroup.Text>
-                    <EndPointInput endpoint={munirEndpoint} event_type="change" fullpath="args/num_frames"/>
+                    <EndPointInput endpoint={munirEndpoint} event_type="change" fullpath="args/num_frames" delay={3000}/>
                   </InputGroup>
                 </Col>
                 <Col>
                   <InputGroup>
                     <InputGroup.Text>Set # Batches: </InputGroup.Text>
-                    <EndPointInput endpoint={munirEndpoint} event_type="change" fullpath="args/num_batches"/>
+                    <EndPointInput endpoint={munirEndpoint} event_type="change" fullpath="args/num_batches" delay={3000}/>
                   </InputGroup>
                 </Col>
               </Row>
