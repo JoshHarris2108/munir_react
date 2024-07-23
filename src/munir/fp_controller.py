@@ -26,9 +26,9 @@ class MunirFpController:
             logging.error("Could not parse control endpoints from configuration")
         else:
             self.odin_data_instances = [OdinData(endpoint) for endpoint in self.endpoints]
+        self.set_timeout(1.0)
 
         self.ctrl_timeout = ctrl_timeout
-
         self._msg_id = 0
 
         # Initialize the state of control and status parameters
@@ -38,8 +38,6 @@ class MunirFpController:
         self.num_frames = 1000
         self.num_batches = 1
         self.fp_status = [{}] * len(self.endpoints)
-
-        self.set_timeout(1.0)
 
         def get_arg(name):
             return getattr(self, name)
@@ -54,6 +52,7 @@ class MunirFpController:
         self.param_tree = ParameterTree({
             'endpoints': (lambda: self.endpoints, None),
             'execute': (lambda: self.do_execute, self.set_execute),
+            'stop_execute': (lambda: None, self.stop_acquisition),
             'timeout': (lambda: self.timeout, self.set_timeout),
             'args': {
                 arg: arg_param(arg) for arg in [
@@ -131,6 +130,7 @@ class MunirFpController:
         logging.debug("MunirFpController set_timeout called with value %f", value)
         self.timeout = value
         for odin_data in self.odin_data_instances:
+            logging.debug(f'Setting timout to:{value} with type:{type(value)}')
             odin_data.ctrl_timeout = value
 
     def set_execute(self, value):
@@ -144,8 +144,6 @@ class MunirFpController:
         :param value: execution flag value to set (True triggers execution)
         """
         logging.debug("MunirController set_execute called with value %s", value)
-
-        self.stop_acquisition()
 
         if value:
             if not self._is_executing():
@@ -229,7 +227,7 @@ class MunirFpController:
 
         return all_success
 
-    def stop_acquisition(self):
+    def stop_acquisition(self, *args):
         """
         Stop the acquisition process.
 

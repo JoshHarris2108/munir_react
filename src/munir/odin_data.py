@@ -22,6 +22,7 @@ class OdinData:
         self.status: Dict[str, Any] = {}
         self.config: Dict[str, Any] = {}
         self.msg_id = 0
+        self.ctrl_timeout = 0.0
 
     def _send_receive(self, msg_type: str, msg_val: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -91,8 +92,7 @@ class OdinData:
         :param frames: Number of frames for the acquisition
         :return: True if the acquisition was set up successfully, False otherwise
         """
-        # Initial configuration to disable packet RX/processing and turn off file writing
-        initial_config = {
+        common_config = {
             "hibirdsdpdk": {
                 "update_config": True,
                 "rx_enable": False,
@@ -104,37 +104,22 @@ class OdinData:
             }
         }
 
-        if not self.set_config(initial_config):
+        if not self.set_config(common_config):
             return False
 
-        # HDF file writing plugin setup
-        hdf_config = {
+        acquisition_config = {
+            "hibirdsdpdk": common_config["hibirdsdpdk"],
             "hdf": {
                 "file": {
-                    "path": path,
-                    "name": acquisition_id,
+                    "path": path
                 },
                 "frames": frames,
+                "acquisition_id": acquisition_id,
                 "write": False
             }
         }
 
-        if not self.set_config(hdf_config):
-            return False
-
-        # Arm the packet processing cores
-        proc_config = {
-            "hibirdsdpdk": {
-                "update_config": True,
-                "rx_enable": False,
-                "proc_enable": True
-            }
-        }
-
-        if not self.set_config(proc_config):
-            return False
-
-        return True
+        return bool(self.set_config(acquisition_config))
 
     def start_acquisition(self) -> bool:
         """
