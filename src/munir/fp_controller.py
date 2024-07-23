@@ -2,52 +2,44 @@ import logging
 import os
 
 from functools import partial
-
 from tornado.ioloop import PeriodicCallback
-
 from odin.adapters.parameter_tree import ParameterTree
-
-from odin_data.control.ipc_channel import IpcChannel
-from odin_data.control.ipc_message import IpcMessage
-
 from .util import MunirError
+from .odin_data import OdinData
 
 
-class MunirFpController():
+class MunirFpController:
     """Main class for the frame processor controller object."""
 
     def __init__(self, ctrl_endpoints, ctrl_timeout, poll_interval):
+        """
+        Initialize the controller object.
 
+        :param ctrl_endpoints: Comma-separated list of control endpoints
+        :param ctrl_timeout: Timeout value for control operations
+        :param poll_interval: Poll interval for status updates
+        """
         self.endpoints = [ep.strip() for ep in ctrl_endpoints.split(',')]
-        self.set_timeout(1.0)
+
+        # Create OdinData instances for each endpoint
+        if len(self.endpoints) == 0:
+            logging.error("Could not parse control endpoints from configuration")
+        else:
+            self.odin_data_instances = [OdinData(endpoint) for endpoint in self.endpoints]
 
         self.ctrl_timeout = ctrl_timeout
 
-        if len(self.endpoints) == 0:
-            logging.error("Could not parse contrl endpoints from configuration")
-
-        self.ctrl_channels = []
-
-        for endpoint in self.endpoints:
-
-            channel = IpcChannel(IpcChannel.CHANNEL_TYPE_DEALER)
-            channel.connect(endpoint)
-            self.ctrl_channels.append(channel)
-
-            logging.debug(
-                "Control channel created with endpoint %s identity %s",
-                endpoint, channel.identity
-            )
-
         self._msg_id = 0
 
-        # Initialise the state of control and status parameters
+        # Initialize the state of control and status parameters
         self.do_execute = False
         self.file_path = '/tmp'
         self.file_name = 'test'
         self.num_frames = 1000
         self.num_batches = 1
         self.fp_status = [{}] * len(self.endpoints)
+
+        self.set_timeout(1.0)
 
         def get_arg(name):
             return getattr(self, name)
@@ -64,7 +56,7 @@ class MunirFpController():
             'execute': (lambda: self.do_execute, self.set_execute),
             'timeout': (lambda: self.timeout, self.set_timeout),
             'args': {
-                arg : arg_param(arg) for arg in [
+                arg: arg_param(arg) for arg in [
                     'file_path', 'file_name', 'num_frames', 'num_batches'
                 ]
             },
@@ -86,7 +78,7 @@ class MunirFpController():
     def initialize(self):
         """Initialize the controller instance.
 
-        This method intialises the controller instance if necessary.
+        This method initializes the controller instance if necessary.
         """
         pass
 
@@ -97,13 +89,13 @@ class MunirFpController():
         be cleaned up correctly.
         """
         self.update_task.stop()
-        for ctrl_channel in self.ctrl_channels:
-            ctrl_channel.close()
+        for odin_data in self.odin_data_instances:
+            odin_data.close()
 
     def get(self, path):
         """Get values from the parameter tree.
 
-        This method returns values from parameter tree to the adapter.
+        This method returns values from the parameter tree to the adapter.
 
         :param path: path to retrieve from tree
         """
@@ -138,6 +130,8 @@ class MunirFpController():
         """
         logging.debug("MunirFpController set_timeout called with value %f", value)
         self.timeout = value
+        for odin_data in self.odin_data_instances:
+            odin_data.ctrl_timeout = value
 
     def set_execute(self, value):
         """Set the command execution flag.
@@ -147,9 +141,11 @@ class MunirFpController():
         set method once all parameters have been updated. This mechanism allows a single PUT request
         to set any other parameters and trigger an execution.
 
-        :param value: execution flag value to set (True triggers excecution)
+        :param value: execution flag value to set (True triggers execution)
         """
         logging.debug("MunirController set_execute called with value %s", value)
+
+        self.stop_acquisition()
 
         if value:
             if not self._is_executing():
@@ -159,7 +155,11 @@ class MunirFpController():
                 raise MunirError("Cannot trigger execution while acquisition is already running")
 
     def _is_executing(self):
+        """
+        Check if the acquisition is currently executing.
 
+        :return: True if executing, False otherwise
+        """
         is_executing = False
         for fp_status in self.fp_status:
             if 'hdf' in fp_status:
@@ -168,7 +168,11 @@ class MunirFpController():
         return is_executing
 
     def _frames_written(self):
+        """
+        Get the number of frames written so far.
 
+        :return: Number of frames written
+        """
         frames_written = 0
         for fp_status in self.fp_status:
             if 'hdf' in fp_status:
@@ -177,116 +181,67 @@ class MunirFpController():
         return frames_written
 
     def _next_msg_id(self):
-        """Return the next IPC message ID to use."""
+        """
+        Return the next IPC message ID to use.
+
+        :return: Next message ID
+        """
         self._msg_id += 1
         return self._msg_id
 
-    def await_response(self, channel):
-        """Await a response to a client command on the given channel."""
-        pollevents = channel.poll(int(self.ctrl_timeout * 1000))
-        if pollevents == IpcChannel.POLLIN:
-            reply = IpcMessage(from_str=channel.recv())
-            # logging.debug(f"Got response from {channel.identity}: {reply}")
-            return reply
-        else:
-            logging.error(f"No response received or error occurred from {channel.identity}.")
-            return False
-
     def _get_status(self):
-        """Get and display the current status of all connected odin-data instances."""
-        #status_responses = []
-        status_msg = IpcMessage('cmd', 'status', id=self._next_msg_id())
+        """Get and display the current status of all connected odin-data instances.
 
-        for ctrl_channel in self.ctrl_channels:
-            #logging.debug(f"Sending status request to {ctrl_channel.identity}")
-            ctrl_channel.send(status_msg.encode())
-
-        for (idx, ctrl_channel) in enumerate(self.ctrl_channels):
-            response = self.await_response(ctrl_channel)
-            if response:
-                self.fp_status[idx] = response.get_params()
-
-    def send_config_message(self, config):
-        """Send a configuration message to all instances."""
-        all_responses_valid = True
-
-        for channel in self.ctrl_channels:
-            config_msg = IpcMessage('cmd', 'configure', id=self._next_msg_id())
-            config_msg.set_params(config)
-            logging.debug(f"Sending configuration: {config} to {channel.identity}")
-            channel.send(config_msg.encode())
-            if not self.await_response(channel):  # pass the channel to await_response
-                all_responses_valid = False
-
-        return all_responses_valid
+        This method sends a status request to each odin-data instance and updates the
+        internal fp_status list with the responses.
+        """
+        for idx, odin_data in enumerate(self.odin_data_instances):
+            self.fp_status[idx] = odin_data.get_status()
 
     def execute_acquisition(self):
+        """
+        Execute the acquisition process.
 
+        This method sets up the configuration for acquisition and triggers the acquisition
+        on all connected odin-data instances.
+        """
         if not os.path.exists(self.file_path):
             os.makedirs(self.file_path)
 
         logging.debug("Executing acquisition")
 
-        # Send initial config message to disable packet RX/processing and turn off file writing
-        config = {
-            "hibirdsdpdk": {
-                "update_config": True,
-                "rx_enable": False,
-                "proc_enable": True,             # TODO - why is this not false?
-                "rx_frames": self.num_frames
-            },
-            "hdf": {
-                "write": False
-            }
-        }
+        all_success = True
 
-        logging.debug("Sending initial acquisition config message with params %s", config)
-        if not self.send_config_message(config):
-            logging.error("Failed to send initial config, aborting acquisition")
+        # Create acquisition on all odin_data instances
+        for odin_data in self.odin_data_instances:
+            if not odin_data.create_acquisition(self.file_path, self.file_name, self.num_frames):
+                logging.error("Failed to create acquisition for endpoint %s", odin_data.endpoint)
+                all_success = False
+
+        if not all_success:
             return False
 
-        # Set up the HDF file writing plugin with the appropriate parameters
-        hdf_config = {
-            "hdf": {
-                "file": {
-                    "path": self.file_path,
-                    "name": self.file_name,
-                },
-                "frames": self.num_frames,
-                "write": True
-            }
-        }
+        # Start acquisition on all odin_data instances
+        for odin_data in self.odin_data_instances:
+            if not odin_data.start_acquisition():
+                logging.error("Failed to start acquisition for endpoint %s", odin_data.endpoint)
+                all_success = False
 
-        logging.debug("Sending HDF config message with params %s", config)
-        if not self.send_config_message(hdf_config):
-            logging.error("Failed to send HDF config, aborting acquisition")
-            return False
+        return all_success
 
-        # Arm the packet processing cores
-        proc_config = {
-            "hibirdsdpdk": {
-                "update_config": True,
-                "rx_enable": False,
-                "proc_enable": True,
-            }
-        }
+    def stop_acquisition(self):
+        """
+        Stop the acquisition process.
 
-        logging.debug("Sending packet processing config message with params %s", config)
-        if not self.send_config_message(proc_config):
-            logging.error("Failed to send packet processing config, aborting acquisition")
-            return False
+        This method stops the acquisition on all connected odin-data instances.
+        """
+        logging.debug("Stopping acquisition")
 
-        # Enable packet reception
-        rx_config = {
-            "hibirdsdpdk": {
-                "update_config": True,
-                "rx_enable": True,
-            }
-        }
+        all_success = True
 
-        logging.debug("Sending packet RX config message with params %s", config)
-        if not self.send_config_message(rx_config):
-            logging.error("Failed to send packet RX config, aborting acquisition")
-            return False
+        for odin_data in self.odin_data_instances:
+            if not odin_data.stop_acquisition():
+                logging.error("Failed to stop acquisition for endpoint %s", odin_data.endpoint)
+                all_success = False
 
-        return True
+        return all_success
