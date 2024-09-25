@@ -64,7 +64,7 @@ function App() {
                 <Col>
                   <InputGroup>
                     <InputGroup.Text>Set File Name: </InputGroup.Text>
-                    <EndPointInput endpoint={munirEndpoint} event_type="change" fullpath="args/file_name" delay={3000}/>
+                    <EndPointInput key={`num_frames_${munirEndpoint}`} endpoint={munirEndpoint} event_type="change" fullpath="args/file_name" delay={3000}/>
                   </InputGroup>
                 </Col>
               </Row>

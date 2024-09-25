@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 
 from functools import partial
@@ -45,8 +46,8 @@ class MunirFpController():
         self.do_execute = False
         self.file_path = '/tmp'
         self.file_name = 'test'
-        self.num_frames = 1000
-        self.num_batches = 1
+        self.num_frames = 6400
+        self.num_batches = 80
         self.fp_status = [{}] * len(self.endpoints)
 
         def get_arg(name):
@@ -119,6 +120,13 @@ class MunirFpController():
         :param data: data to set in tree
         """
         # Update values in the tree at the specified path
+        logging.debug(f"Data: {data}")
+        batches = data.get('num_batches', self.num_batches)
+
+        if ('num_frames' in data or 'num_batches' in data) and ( batches > 0):
+                logging.debug("Detected frames and/or batches being changed, and batches is greater than 0")
+                data = self._set_frames_as_multiple(data)
+
         self.param_tree.set(path, data)
 
         # If the call included trigger an execution do so now all parameters have been updated.
@@ -128,6 +136,25 @@ class MunirFpController():
 
         # Return updated values from the tree
         return self.param_tree.get(path)
+    
+    def _set_frames_as_multiple(self, data):
+        """Ensure num_frames is a multiple of num_batches by rounding up.
+
+        :param data: dictionary containing num_frames and/or num_batches
+        :return: updated data dictionary with corrected num_frames if necessary
+        """
+
+        # Get frames and batches from 'data', if not provided default to stored values
+        frames = data.get('num_frames', self.num_frames)
+        batches = data.get('num_batches', self.num_batches)
+
+        # Calculate a new value for frames, by rounding up the highest multiple of batches
+        frames = (batches * round(float(frames) / batches))
+
+        data['num_frames'] = frames
+        logging.debug(f'Adjusted num_frames to :{frames} to be a multiple of batches: {batches}')
+
+        return data          
 
     def set_timeout(self, value):
         """Set the command execution timeout.
@@ -253,7 +280,10 @@ class MunirFpController():
                     "name": self.file_name,
                 },
                 "frames": self.num_frames,
-                "write": True
+                "write": True,
+                "process":{
+                    "blocks_per_file": self.num_batches,
+                }
             }
         }
 
