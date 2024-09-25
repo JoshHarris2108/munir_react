@@ -76,6 +76,11 @@ function App() {
                   </InputGroup>
                 </Col>
                 <Col>
+                  <WSStatusBox label="Corrected Frames" type="info">
+                    {munirEndpoint.data?.args?.num_frames || 'N/A'}
+                  </WSStatusBox>
+                </Col>
+                <Col>
                   <InputGroup>
                     <InputGroup.Text>Set # Batches: </InputGroup.Text>
                     <EndPointInput endpoint={munirEndpoint} event_type="change" fullpath="args/num_batches" delay={3000}/>
