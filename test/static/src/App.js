@@ -74,6 +74,9 @@ function App() {
                     <InputGroup.Text>Set # Frames: </InputGroup.Text>
                     <EndPointInput key={`num_frames_${munirEndpoint}`} endpoint={munirEndpoint} event_type="change" fullpath="args/num_frames" delay={3000}/>
                   </InputGroup>
+                  <InputGroup>
+                    <InputGroup.Text> Corrected Frames {munirEndpoint.data?.args?.num_frames || 'N/A'}</InputGroup.Text>
+                  </InputGroup>
                 </Col>
                 <Col className="d-flex align-items-center"> {/* Flexbox to align items */}
                   <WSStatusBox label="Corrected Frames" type="info" className="equal-height">
